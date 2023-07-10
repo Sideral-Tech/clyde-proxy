@@ -20,7 +20,7 @@ To run this project, you will need to add the following environment variables to
 To use Clyde Proxy, run
 
 ```bash
-  cargo run
+cargo run
 ```
 
 ## Authors

@@ -1,7 +1,7 @@
 
 # 🤖 Clyde Proxy
 
-Proxy Clyde from one Discord server to another.
+Proxy Clyde from one Discord channel to another.
 
 ## Demo
 
@@ -11,7 +11,7 @@ Proxy Clyde from one Discord server to another.
 
 To run this project, you will need to add the following environment variables to your .env file
 
-- `DISCORD_TOKEN`: The token of a Discord user
+- `DISCORD_TOKEN`: The token of the Discord user that will be used as a self-bot
 - `SELF_BOT_USER_ID`: The ID of the Discord user that will be used as a self-bot
 - `OWNER_ID`: The ID of the Discord user that will be used as the owner of the bot
 

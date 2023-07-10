@@ -6,7 +6,7 @@ use poise::{
     futures_util::lock::Mutex,
     serenity_prelude::{self as serenity, ChannelId, UserId},
 };
-use std::env::var;
+use std::{env::var, sync::Arc};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -15,13 +15,19 @@ const CLYDE_ID: u64 = 1081004946872352958;
 
 #[derive(Default)]
 pub struct Data {
-    proxy_config: Mutex<Option<ProxyConfiguration>>,
+    config: Mutex<Config>,
+}
+
+#[derive(Default)]
+pub struct Config {
+    proxy_config: Option<ProxyConfiguration>,
 }
 
 #[derive(Default)]
 pub struct ProxyConfiguration {
     to_channel_id: ChannelId,   // The channel ID to proxy to.
     from_channel_id: ChannelId, // The channel ID to proxy from.
+    enabled: bool,              // Whether the proxy is enabled.
 }
 
 #[derive(Default)]
@@ -30,7 +36,7 @@ struct Handler {
     data: Data,
     bot_id: UserId,
     shard_manager:
-        std::sync::Mutex<Option<std::sync::Arc<tokio::sync::Mutex<serenity::ShardManager>>>>,
+        std::sync::Mutex<Option<Arc<tokio::sync::Mutex<serenity::ShardManager>>>>,
 }
 
 // Custom handler to dispatch poise events.
@@ -59,13 +65,15 @@ impl Handler {
 impl serenity::EventHandler for Handler {
     async fn message(&self, ctx: serenity::Context, new_message: serenity::Message) {
         if new_message.author.bot && new_message.author.id == CLYDE_ID {
-            let Some(ref data) = *self.data.proxy_config.lock().await else {
+            let config = self.data.config.lock().await;
+
+            let Some(proxy_config) = &config.proxy_config else {
                 return;
             };
 
             // TODO: If the message is in a thread check for the channel id in which the thread was.
-            if data.to_channel_id == new_message.channel_id {
-                let _ = data
+            if proxy_config.to_channel_id == new_message.channel_id {
+                let _ = proxy_config
                     .from_channel_id
                     .say(&ctx.http, &new_message.content)
                     .await;
@@ -105,7 +113,12 @@ async fn main() -> Result<(), Error> {
     dotenv::dotenv().expect("Failed to read .env file");
 
     let options = poise::FrameworkOptions {
-        commands: vec![commands::help(), commands::proxy(), commands::message()],
+        commands: vec![
+            commands::help(),
+            commands::toggle(),
+            commands::proxy(),
+            commands::message(),
+        ],
         prefix_options: poise::PrefixFrameworkOptions {
             mention_as_prefix: true,
             ..Default::default()

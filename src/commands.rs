@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{CacheHttp};
+use poise::serenity_prelude::CacheHttp;
 
 use crate::{Context, Error, ProxyConfiguration, CLYDE_ID};
 
@@ -14,7 +14,7 @@ pub async fn help(
         ctx,
         command.as_deref(),
         poise::builtins::HelpConfiguration {
-            extra_text_at_bottom: "Proxy Clyde from one Discord server to another.",
+            extra_text_at_bottom: "Proxy Clyde from one Discord channel to another.",
             ..Default::default()
         },
     )
@@ -22,11 +22,29 @@ pub async fn help(
     Ok(())
 }
 
-/// Proxy Clyde from another Discord server to your server.
+#[poise::command(prefix_command, owners_only)]
+pub async fn toggle(ctx: Context<'_>) -> Result<(), Error> {
+    let mut config = ctx.data().config.lock().await;
+
+    let Some(ref mut proxy_config) = &mut config.proxy_config
+    else { return Err("No proxy configured".into()); };
+
+    proxy_config.enabled = !proxy_config.enabled;
+
+    if proxy_config.enabled {
+        ctx.say("Proxy enabled.").await?;
+    } else {
+        ctx.say("Proxy disabled.").await?;
+    }
+
+    Ok(())
+}
+
+/// Proxy Clyde from another Discord channel.
 #[poise::command(prefix_command, owners_only)]
 pub async fn proxy(
     ctx: Context<'_>,
-    #[description = "The channel ID of the other server"] channel_id: String,
+    #[description = "The channel ID to proxy Clyde from"] channel_id: String,
 ) -> Result<(), Error> {
     let Ok(channel) = ctx.http().get_channel(channel_id.parse()?).await else {
         return Err("Can not find channel ID".into());
@@ -35,9 +53,10 @@ pub async fn proxy(
     let config = ProxyConfiguration {
         from_channel_id: ctx.channel_id(),
         to_channel_id: channel.id(),
+        enabled: true,
     };
 
-    *ctx.data().proxy_config.lock().await = Some(config);
+    ctx.data().config.lock().await.proxy_config = Some(config);
 
     ctx.say(format!(
         "Proxying <@{}> from channel <#{}>.",
@@ -49,27 +68,32 @@ pub async fn proxy(
 }
 
 /// Send a message to the proxied server.
-#[poise::command(prefix_command)]
+#[poise::command(prefix_command, aliases("m"))]
 pub async fn message(
     ctx: Context<'_>,
     #[description = "The message to send"] message: String,
 ) -> Result<(), Error> {
-    let Some(ref mut config) = *ctx.data().proxy_config.lock().await 
+    let mut config = ctx.data().config.lock().await;
+
+    let Some(ref mut proxy_config) = &mut config.proxy_config
         else { return Err("No proxy configured".into()); };
 
-    config.from_channel_id = ctx.channel_id();
+    if !proxy_config.enabled {
+        return Err("Proxy is not enabled".into());
+    }
 
-    config
-        .to_channel_id
-        .say(
-            ctx.http(),
-            format!(
-                "<@{}> Hello, my name is {}. {}",
-                CLYDE_ID,
-                ctx.author().name,
-                message
-            ),
-        )
-        .await?;
+    // Remember the current channel ID so we can send a message back to it.
+    proxy_config.from_channel_id = ctx.channel_id();
+
+    proxy_config.to_channel_id.say(
+        ctx.http(),
+        format!(
+            "<@{}> Hello, my name is {}. {}",
+            CLYDE_ID,
+            ctx.author().name,
+            message
+        ),
+    ).await?;
+
     Ok(())
 }

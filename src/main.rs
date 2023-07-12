@@ -2,11 +2,10 @@
 
 mod commands;
 
-use poise::{
-    futures_util::lock::Mutex,
-    serenity_prelude::{self as serenity, ChannelId, UserId},
-};
-use std::{env::var, sync::Arc};
+use poise::serenity_prelude::{self as serenity, ChannelId, UserId};
+use std::env::var;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -14,13 +13,31 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 const CLYDE_ID: u64 = 1081004946872352958;
 
 #[derive(Default)]
+struct Handler {
+    options: poise::FrameworkOptions<Data, Error>,
+    data: Data,
+    bot_id: UserId,
+    shard_manager: std::sync::Mutex<Option<Arc<tokio::sync::Mutex<serenity::ShardManager>>>>,
+}
+
+#[derive(Default)]
 pub struct Data {
-    config: Mutex<Config>,
+    config: tokio::sync::Mutex<Config>,
+    locking: Locking,
 }
 
 #[derive(Default)]
 pub struct Config {
     proxy_config: Option<ProxyConfiguration>,
+}
+
+pub struct Locking {
+    shared_state: tokio::sync::Mutex<Option<Arc<State>>>,
+    semaphore: Semaphore,
+}
+
+pub struct State {
+    pub last_message: serenity::Message,
 }
 
 #[derive(Default)]
@@ -30,13 +47,13 @@ pub struct ProxyConfiguration {
     enabled: bool,              // Whether the proxy is enabled.
 }
 
-#[derive(Default)]
-struct Handler {
-    options: poise::FrameworkOptions<Data, Error>,
-    data: Data,
-    bot_id: UserId,
-    shard_manager:
-        std::sync::Mutex<Option<Arc<tokio::sync::Mutex<serenity::ShardManager>>>>,
+impl Default for Locking {
+    fn default() -> Self {
+        Self {
+            shared_state: Default::default(),
+            semaphore: Semaphore::new(1),
+        }
+    }
 }
 
 // Custom handler to dispatch poise events.
@@ -64,19 +81,62 @@ impl Handler {
 #[serenity::async_trait]
 impl serenity::EventHandler for Handler {
     async fn message(&self, ctx: serenity::Context, new_message: serenity::Message) {
-        if new_message.author.bot && new_message.author.id == CLYDE_ID {
-            let config = self.data.config.lock().await;
+        // Respond back.
+        if new_message.author.id == CLYDE_ID {
+            if let Some(proxy_config) = &self.data.config.lock().await.proxy_config {
+                // TODO: If the message is in a thread check for the channel id in which the thread was.
+                if proxy_config.to_channel_id == new_message.channel_id {
+                    // Reply to the message and release the lock.
+                    self.data.locking.semaphore.add_permits(1);
 
-            let Some(proxy_config) = &config.proxy_config else {
-                return;
+                    let state = self.data.locking.shared_state.lock().await.clone().unwrap();
+
+                    let _ = proxy_config
+                        .from_channel_id
+                        .send_message(&ctx.http, |b| {
+                            b.reference_message(&state.last_message);
+                            b.content(&new_message.content)
+                        })
+                        .await;
+                }
+            }
+        } else {
+            let proxy = if let Some(referenced_message) = &new_message.referenced_message {
+                referenced_message.author.id == self.bot_id
+            } else {
+                new_message.author.id != self.bot_id && new_message.mentions_user_id(self.bot_id)
             };
 
-            // TODO: If the message is in a thread check for the channel id in which the thread was.
-            if proxy_config.to_channel_id == new_message.channel_id {
-                let _ = proxy_config
-                    .from_channel_id
-                    .say(&ctx.http, &new_message.content)
+            if proxy {
+                // Lock the event bus to prevent other messages from being sent before Clyde replied to the sent message.
+                self.data
+                    .locking
+                    .semaphore
+                    .acquire()
+                    .await
+                    .unwrap()
+                    .forget();
+
+                if let Some(ref mut proxy_config) = &mut self.data.config.lock().await.proxy_config
+                {
+                    let _ = commands::proxy_message(
+                        &ctx,
+                        proxy_config,
+                        &new_message.channel_id,
+                        &new_message.author,
+                        &new_message
+                            .content
+                            .replace(&format!("<@{}>", self.bot_id).to_string(), ""),
+                    )
                     .await;
+
+                    self.data.locking.shared_state.lock().await.replace(
+                        State {
+                            last_message: new_message.clone(),
+                        }
+                        .into(),
+                    );
+                }
             }
         }
 
@@ -113,12 +173,7 @@ async fn main() -> Result<(), Error> {
     dotenv::dotenv().expect("Failed to read .env file");
 
     let options = poise::FrameworkOptions {
-        commands: vec![
-            commands::help(),
-            commands::toggle(),
-            commands::proxy(),
-            commands::message(),
-        ],
+        commands: vec![commands::help(), commands::toggle(), commands::proxy()],
         prefix_options: poise::PrefixFrameworkOptions {
             mention_as_prefix: true,
             ..Default::default()

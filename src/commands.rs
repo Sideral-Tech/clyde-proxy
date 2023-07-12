@@ -1,6 +1,6 @@
-use poise::serenity_prelude::CacheHttp;
-
+use crate::serenity;
 use crate::{Context, Error, ProxyConfiguration, CLYDE_ID};
+use poise::serenity_prelude::{CacheHttp, ChannelId};
 
 /// Show this help menu.
 #[poise::command(prefix_command)]
@@ -22,6 +22,7 @@ pub async fn help(
     Ok(())
 }
 
+// Toggle the proxy on or off.
 #[poise::command(prefix_command, owners_only)]
 pub async fn toggle(ctx: Context<'_>) -> Result<(), Error> {
     let mut config = ctx.data().config.lock().await;
@@ -67,33 +68,23 @@ pub async fn proxy(
     Ok(())
 }
 
-/// Send a message to the proxied server.
-#[poise::command(prefix_command, aliases("m"))]
-pub async fn message(
-    ctx: Context<'_>,
-    #[description = "The message to send"] message: String,
+pub async fn proxy_message(
+    ctx: &serenity::Context,
+    proxy_config: &mut ProxyConfiguration,
+    from_channel_id: &ChannelId,
+    author: &serenity::User,
+    message: &String,
 ) -> Result<(), Error> {
-    let mut config = ctx.data().config.lock().await;
-
-    let Some(ref mut proxy_config) = &mut config.proxy_config
-        else { return Err("No proxy configured".into()); };
-
-    if !proxy_config.enabled {
-        return Err("Proxy is not enabled".into());
-    }
-
     // Remember the current channel ID so we can send a message back to it.
-    proxy_config.from_channel_id = ctx.channel_id();
+    proxy_config.from_channel_id = *from_channel_id;
 
-    proxy_config.to_channel_id.say(
-        ctx.http(),
-        format!(
-            "<@{}> Hello, my name is {}. {}",
-            CLYDE_ID,
-            ctx.author().name,
-            message
-        ),
-    ).await?;
+    proxy_config
+        .to_channel_id
+        .say(
+            &ctx.http,
+            format!("<@{}> Hello, my name is {}. {}", CLYDE_ID, author, message),
+        )
+        .await?;
 
     Ok(())
 }

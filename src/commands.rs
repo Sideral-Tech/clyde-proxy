@@ -1,6 +1,6 @@
-use crate::serenity;
+
 use crate::{Context, Error, ProxyConfiguration, CLYDE_ID};
-use poise::serenity_prelude::{CacheHttp, ChannelId};
+use poise::serenity_prelude::{CacheHttp};
 
 /// Show this help menu.
 #[poise::command(prefix_command)]
@@ -64,27 +64,6 @@ pub async fn proxy(
         CLYDE_ID, channel_id
     ))
     .await?;
-
-    Ok(())
-}
-
-pub async fn proxy_message(
-    ctx: &serenity::Context,
-    proxy_config: &mut ProxyConfiguration,
-    from_channel_id: &ChannelId,
-    author: &serenity::User,
-    message: &String,
-) -> Result<(), Error> {
-    // Remember the current channel ID so we can send a message back to it.
-    proxy_config.from_channel_id = *from_channel_id;
-
-    proxy_config
-        .to_channel_id
-        .say(
-            &ctx.http,
-            format!("<@{}> Hello, my name is {}. {}", CLYDE_ID, author, message),
-        )
-        .await?;
 
     Ok(())
 }

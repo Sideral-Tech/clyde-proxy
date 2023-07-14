@@ -15,6 +15,7 @@ const CLYDE_ID: u64 = 1081004946872352958;
 #[derive(Default)]
 struct Handler {
     options: poise::FrameworkOptions<Data, Error>,
+    command_names: Vec<String>,
     data: Data,
     bot_id: UserId,
     shard_manager: std::sync::Mutex<Option<Arc<tokio::sync::Mutex<serenity::ShardManager>>>>,
@@ -59,8 +60,15 @@ impl Default for Locking {
 // Custom handler to dispatch poise events.
 impl Handler {
     pub fn new(options: poise::FrameworkOptions<Data, Error>, bot_id: u64) -> Self {
+        let command_names = options
+            .commands
+            .iter()
+            .map(|c| c.name.clone())
+            .collect::<Vec<_>>();
+
         Self {
             options,
+            command_names,
             bot_id: UserId(bot_id),
             ..Default::default()
         }
@@ -108,34 +116,48 @@ impl serenity::EventHandler for Handler {
             };
 
             if proxy {
-                // Lock the event bus to prevent other messages from being sent before Clyde replied to the sent message.
-                self.data
-                    .locking
-                    .semaphore
-                    .acquire()
-                    .await
-                    .unwrap()
-                    .forget();
+                let message_to_proxy = &new_message
+                    .content
+                    .replace(&format!("<@{}>", self.bot_id), "");
 
-                if let Some(ref mut proxy_config) = &mut self.data.config.lock().await.proxy_config
+                let trimmed_message_to_proxy = message_to_proxy.trim();
+                if !self
+                    .command_names
+                    .iter()
+                    .any(|name| trimmed_message_to_proxy.starts_with(name))
                 {
-                    let _ = commands::proxy_message(
-                        &ctx,
-                        proxy_config,
-                        &new_message.channel_id,
-                        &new_message.author,
-                        &new_message
-                            .content
-                            .replace(&format!("<@{}>", self.bot_id).to_string(), ""),
-                    )
-                    .await;
+                    // Lock the event bus to prevent other messages from being sent before Clyde replied to the sent message.
+                    self.data
+                        .locking
+                        .semaphore
+                        .acquire()
+                        .await
+                        .unwrap()
+                        .forget();
 
-                    self.data.locking.shared_state.lock().await.replace(
-                        State {
-                            last_message: new_message.clone(),
-                        }
-                        .into(),
-                    );
+                    if let Some(ref mut proxy_config) =
+                        &mut self.data.config.lock().await.proxy_config
+                    {
+                        proxy_config.from_channel_id = new_message.channel_id;
+
+                        let _ = proxy_config
+                            .to_channel_id
+                            .say(
+                                &ctx.http,
+                                format!(
+                                    "<@{}> Hello, my name is {}. {}",
+                                    CLYDE_ID, new_message.author, message_to_proxy
+                                ),
+                            )
+                            .await;
+
+                        self.data.locking.shared_state.lock().await.replace(
+                            State {
+                                last_message: new_message.clone(),
+                            }
+                            .into(),
+                        );
+                    }
                 }
             }
         }

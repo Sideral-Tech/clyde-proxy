@@ -24,15 +24,15 @@ Proxy Clyde from one Discord channel to another.
 
    - 📝 To see all commands, mention the user followed by the `help` command:
 
-     ![Help command](https://github.com/Sideral-Tech/clyde-proxy/assets/13122796/be00ec83-aca9-4495-98b2-f910998c8e87)
+     ![Help command](https://github.com/Sideral-Tech/clyde-proxy/assets/13122796/30409773-022e-4134-886b-400eb95d18ed)
 
    - ⚙️ To setup the proxy, mention the user followed by the `proxy` command and the ID of a channel `<channel id>` that Clyde participates in. This ID can also be of a DM channel:
 
      ![Proxy command](https://github.com/Sideral-Tech/clyde-proxy/assets/13122796/9021bfc7-cd55-4dae-89d1-969b75eae258)
 
-   - 💬 To proxy messages from any channel to Clyde, mention the user followed by the `message` command and the message you want to send:
+   - 💬 To proxy messages from any channel to Clyde, mention the self-bot or reference a self-bot's message followed by the message you want to send:
 
-     ![Message command](https://github.com/Sideral-Tech/clyde-proxy/assets/13122796/d8647759-3a68-47cc-82ce-d90e2ce054dd)
+     ![Message command](https://github.com/Sideral-Tech/clyde-proxy/assets/13122796/fac852e5-8261-4a8d-956d-57af1245123c)
 
    - ⏸️ If you want to toggle the proxy on or off, mention the user followed by the `toggle` command:
 
